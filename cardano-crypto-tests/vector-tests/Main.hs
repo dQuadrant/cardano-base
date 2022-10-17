@@ -1,5 +1,5 @@
 
-module Test 
+module Main(main) 
 where
 
 import qualified Test.EcdsaSecp256k1Tests as EcdsaSecp256k1Tests

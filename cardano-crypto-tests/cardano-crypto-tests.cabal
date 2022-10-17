@@ -96,7 +96,7 @@ test-suite test-crypto-vectors
   import:               base, project-config
   type:                 exitcode-stdio-1.0
   hs-source-dirs:       vector-tests
-  main-is:              Test.hs
+  main-is:              Main.hs
   other-modules:
     Test.EcdsaSecp256k1Tests
     Test.SchnorrSecp256k1Tests
@@ -112,7 +112,13 @@ test-suite test-crypto-vectors
                       , base16-bytestring
                       , cassava
                       , cardano-binary
-                      , cbor
+                      , cborg
+                      , tasty
+                      , tasty-hunit
+                      , cardano-crypto-class
+
+
+
                      
   ghc-options:          -threaded -rtsopts -with-rtsopts=-N
 
