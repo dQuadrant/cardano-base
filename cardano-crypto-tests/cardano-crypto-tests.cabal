@@ -92,6 +92,31 @@ test-suite test-crypto
 
   ghc-options:          -threaded -rtsopts -with-rtsopts=-N
 
+test-suite test-crypto-vectors
+  import:               base, project-config
+  type:                 exitcode-stdio-1.0
+  hs-source-dirs:       vector-tests
+  main-is:              Test.hs
+  other-modules:
+    Test.EcdsaSecp256k1Tests
+    Test.SchnorrSecp256k1Tests
+    Util.Utils
+    TestVector.EcdsaSecp256k1Vectors
+    TestVector.SchnorrSecp256k1Vectors
+    TestVector.Vectors
+  build-depends:        base
+                      , bytestring
+                      , text
+                      , utf8-string
+                      , random-bytestring
+                      , base16-bytestring
+                      , cassava
+                      , cardano-binary
+                      , cbor
+                     
+  ghc-options:          -threaded -rtsopts -with-rtsopts=-N
+
+
 benchmark bench-crypto
   import:               base, project-config
   type:                 exitcode-stdio-1.0
