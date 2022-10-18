@@ -17,3 +17,6 @@ Tests including vectors for secp256k1 are defined on `vector-tests` and output v
     - Invalid verification key check
     - Invalid message check
     - Invalid signature check
+
+To generate the vectors csv output again run the tests:
+`cabal test test-crypto-vectors`
