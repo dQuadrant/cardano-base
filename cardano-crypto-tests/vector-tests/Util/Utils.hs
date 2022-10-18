@@ -13,6 +13,7 @@ module Util.Utils
     byteStringToString,
     toHexByteString,
     convertToBytes,
+    hexLength
   )
 where
 
@@ -23,6 +24,10 @@ import qualified Data.ByteString.Base16 as BS16
 import qualified Data.ByteString.UTF8 as BSU -- from utf8-string
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Numeric (showHex)
+
+defaultCborPrefix :: String
+defaultCborPrefix = "58"
 
 -- Convert raw bytes to base16
 toHex :: ToCBOR a => a -> Int -> String
@@ -39,10 +44,14 @@ byteStringToString = T.unpack . T.decodeUtf8
 toHexByteString :: ByteString -> ByteString
 toHexByteString = BS16.encode
 
-convertToBytes :: String -> String -> IO ByteString
-convertToBytes prefix hexStr = do
-  let hexBs = BSU.fromString $ prefix ++ hexStr
-  let bytesE = unHex hexBs
+convertToBytes :: String -> IO ByteString
+convertToBytes hexStr = do
+  let bytesLengthHex = showHex (hexLength hexStr) ""
+      hexBs = BSU.fromString $ defaultCborPrefix ++ bytesLengthHex ++ hexStr
+      bytesE = unHex hexBs
   case bytesE of
     Left _ -> error "Error: Couldn't unHex the Hex string. Incorrect format."
     Right bytes' -> pure bytes'
+
+hexLength :: String -> Int
+hexLength hexStr = length hexStr `div` 2

@@ -36,23 +36,26 @@ import Control.Exception (SomeException (..), throw, try)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.UTF8 as BSU
 import qualified Data.Csv as Csv
-import Data.List (isInfixOf)
 import Data.Proxy (Proxy (..))
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, testCase)
+import Test.Tasty.HUnit (assertEqual, testCase)
 import TestVector.Vectors
   ( defaultEcdsaSignature,
-    defaultLeftOverValueConvertedForDecoderError,
     defaultMessage,
     defaultSKey,
     defaultVKey,
     ecdsa256k1VKeyAndSigVerifyTestVectors,
-    insufficientLengthError,
     signAndVerifyTestVectors,
-    vectorsOutputCsvPath,
     wrongLengthMessageHashTestVectors,
     wrongMessagesAndSignaturesTestVectors,
     wrongVerificationKeyTestVectors,
+  )
+import Util.StringConstants
+  ( cannotDecodeVerificationKeyError,
+    invalidEcdsaSignatureLengthError,
+    invalidEcdsaVerificationKeyLengthError,
+    unexpectedDecodingError,
+    vectorsOutputCsvPath,
   )
 import Util.Utils (convertToBytes, toHex)
 
@@ -164,17 +167,6 @@ wrongVerificationKeyTestVector wrongVKey = do
   result <- ecdsaSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage
   pure $ convertResultToCsvRecord defaultSKey wrongVKey defaultMessage result
 
--- Use verification key that is not on the curve
-verificationKeyNotOnCurveTestVector :: String -> IO CsvResult
-verificationKeyNotOnCurveTestVector wrongVKey = do
-  result <- try (ecdsaSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage) :: IO (Either DecoderError EcdsaSignatureResult)
-  case result of
-    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
-      assertBool "Expected cannot decode key error." $ isInfixOf "cannot decode key" err
-      pure (defaultSKey, wrongVKey, defaultMessage, toHex (fromMessageHash $ hashMessage defaultMessage) 4, defaultEcdsaSignature, "False")
-    Left _ -> error "Test failed. Unexpected verification key decoding error encountered."
-    Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
-
 -- Sign using one message but verify using another message but right signature
 wrongMessageRightSignatureTestVector :: (String, String, String) -> IO CsvResult
 wrongMessageRightSignatureTestVector (signMsg, verifyMsg, _) = do
@@ -192,29 +184,32 @@ invalidLengthVerificationKeyTestVector :: String -> IO CsvResult
 invalidLengthVerificationKeyTestVector invalidVKey = do
   result <- try (verifyOnlyWithSigTestVector defaultSKey invalidVKey defaultMessage defaultEcdsaSignature) :: IO (Either DecoderError EcdsaSignatureResult)
   case result of
-    Left ex -> do
-      case ex of
-        DecoderErrorLeftover _ leftOverValue -> do
-          assertBool "Error Leftovervalue must be as specified in vectors." $ isInfixOf defaultLeftOverValueConvertedForDecoderError (show leftOverValue)
-        DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err) -> do
-          assertBool "Expected end of input error." $ isInfixOf insufficientLengthError err
-        _ -> error "Test failed. Unexpected signature decoding error encountered."
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
+      assertEqual "Expected wrong length error." (invalidEcdsaVerificationKeyLengthError invalidVKey) err
       pure (defaultSKey, invalidVKey, defaultMessage, toHex (fromMessageHash $ hashMessage defaultMessage) 4, defaultEcdsaSignature, "False")
-    Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using invalid length verification key should not be successful."
 
 -- Parse exsiting invalid signature and try to verify using vkey msg and signature only
 invalidLengthSignatureTestVector :: (String, String, String, String) -> IO CsvResult
 invalidLengthSignatureTestVector (sKeyStr, vKeyStr, msg, sigStr) = do
   result <- try (verifyOnlyWithSigTestVector sKeyStr vKeyStr msg sigStr) :: IO (Either DecoderError EcdsaSignatureResult)
   case result of
-    Left ex -> do
-      case ex of
-        DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err) -> do
-          assertBool "Expected end of input error." $ isInfixOf insufficientLengthError err
-        DecoderErrorLeftover _ leftOverValue -> do
-          assertBool "Error Leftovervalue must be as specified in vectors." $ isInfixOf defaultLeftOverValueConvertedForDecoderError (show leftOverValue)
-        _ -> error "Test failed. Unexpected signature decoding error encountered."
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
+      assertEqual "Expected wrong length error." (invalidEcdsaSignatureLengthError sigStr) err
       pure ("", vKeyStr, msg, toHex (fromMessageHash $ hashMessage msg) 4, sigStr, "False")
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using invalid length signature should not be successful."
+
+-- Use verification key that is not on the curve
+verificationKeyNotOnCurveTestVector :: String -> IO CsvResult
+verificationKeyNotOnCurveTestVector wrongVKey = do
+  result <- try (ecdsaSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage) :: IO (Either DecoderError EcdsaSignatureResult)
+  case result of
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
+      assertEqual "Expected cannot decode key error." cannotDecodeVerificationKeyError err
+      pure (defaultSKey, wrongVKey, defaultMessage, toHex (fromMessageHash $ hashMessage defaultMessage) 4, defaultEcdsaSignature, "False")
+    Left _ -> error unexpectedDecodingError
     Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
 
 -- Simple sign and verify test vector function with sKey, vKey and message in string
@@ -271,7 +266,8 @@ hashMessage msg = hashAndPack (Proxy @SHA3_256) $ BSU.fromString msg
 -- Convert vKeyInHex to appropirate vKey
 parseEcdsaVerKey :: String -> IO (VerKeyDSIGN EcdsaSecp256k1DSIGN)
 parseEcdsaVerKey vKeyHex = do
-  vKeyBytes <- convertToBytes "582102" vKeyHex
+  -- Only even-y cordinate is parsed by this function
+  vKeyBytes <- convertToBytes vKeyHex
   let vKeyE = decodeFull' vKeyBytes
   case vKeyE of
     Left err -> throw err
@@ -280,7 +276,7 @@ parseEcdsaVerKey vKeyHex = do
 -- Convert sKeyInHex to appropirate sKey
 parseEcdsaSignKey :: String -> IO (SignKeyDSIGN EcdsaSecp256k1DSIGN)
 parseEcdsaSignKey sKeyHex = do
-  sKeyBytes <- convertToBytes "5820" sKeyHex
+  sKeyBytes <- convertToBytes sKeyHex
   let sKeyE = decodeFull' sKeyBytes
   case sKeyE of
     Left err -> throw err
@@ -289,7 +285,7 @@ parseEcdsaSignKey sKeyHex = do
 -- Convert sigInHex to appropirate signature
 parseEcdsaSignature :: String -> IO (SigDSIGN EcdsaSecp256k1DSIGN)
 parseEcdsaSignature sigHex = do
-  sigBytes <- convertToBytes "5840" sigHex
+  sigBytes <- convertToBytes sigHex
   let sigE = decodeFull' sigBytes :: Either DecoderError (SigDSIGN EcdsaSecp256k1DSIGN)
   case sigE of
     Left err -> throw err

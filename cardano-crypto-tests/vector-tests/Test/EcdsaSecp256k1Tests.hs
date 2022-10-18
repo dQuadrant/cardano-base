@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Test.EcdsaSecp256k1Tests
-  ( tests
+  ( tests,
   )
 where
 
@@ -34,10 +34,10 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.Random (random)
 import Data.Either (isLeft)
-import Data.List (isInfixOf)
 import Data.Proxy (Proxy (..))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
+import Util.StringConstants (invalidEcdsaVerificationKeyLengthError, invalidEcdsaSignatureLengthError, cannotDecodeVerificationKeyError, unexpectedDecodingError)
 import Util.Utils (convertToBytes)
 
 type EcdsaSignatureResult = (VerKeyDSIGN EcdsaSecp256k1DSIGN, MessageHash, SigDSIGN EcdsaSecp256k1DSIGN, Bool)
@@ -47,11 +47,10 @@ getSignKey = do
   seed <- readSeedFromSystemEntropy 32
   pure $ genKeyDSIGN seed
 
---TODO Find a better way to decode currently only cbor decoding with data format 582102 is only supported.
 -- Convert vKeyInHex to appropirate vKey
 parseHexVerKey :: String -> IO (Either DecoderError (VerKeyDSIGN EcdsaSecp256k1DSIGN))
 parseHexVerKey vKeyHex = do
-  vKeyBytes <- convertToBytes "582102" vKeyHex
+  vKeyBytes <- convertToBytes vKeyHex
   pure $ decodeFull' vKeyBytes
 
 tests :: TestTree
@@ -90,38 +89,35 @@ validLengthMessageHashTest = testCase "should return True when message hash with
 
 invalidLengthVerificationKeyTest :: TestTree
 invalidLengthVerificationKeyTest = testCase "should return wrong length error when invalid verification key length used." $ do
-  let invalidLengthVKey = "DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA6"
+  let invalidLengthVKey = "02DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA6A5A8"
   result <- parseHexVerKey invalidLengthVKey
   assertBool "Failed invalid length verification key is treated as valid." $ isLeft result
   case result of
-    -- TODO Not helpful error message is returned for now need to raise the readability
-    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> assertBool "Expected wrong length error returned." $ isInfixOf "end of input" err
-    Left _ -> error "Test failed. Unexpected error encountred while decoding invalid verification key signature."
-    Right _ -> error "Error result is right which should not be the case."
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> assertEqual "Expected wrong length error returned." (invalidEcdsaVerificationKeyLengthError invalidLengthVKey) err
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using invalid length verification key should not be successful."
 
 invalidLengthSignatureTest :: TestTree
 invalidLengthSignatureTest = testCase "should return wrong length error when invalid signature length used." $ do
   let invalidSignature = "c0730606584a92b4a979fdbfbb89a6b304827ab5084e55f61f6c1fbf36cf359b49a8e128aee4bba7fa5b8b0491ba2425aa97a2af668cb4c54fb68dfae8a675"
-  signatureBytes <- convertToBytes "5840" invalidSignature
+  signatureBytes <- convertToBytes invalidSignature
   let result = decodeFull' signatureBytes :: Either DecoderError (SigDSIGN EcdsaSecp256k1DSIGN)
   assertBool "Failed invalid length verification key is treated as valid." $ isLeft result
-  print result
   case result of
-    -- TODO Not helpful error message is returned for now need to raise the readability
-    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> assertEqual "Expected wrong length error returned." "end of input" err
-    Left _ -> error "Test failed. Unexpected error encountred while decoding invalid  length signature."
-    Right _ -> error "Error result is right which should not be the case."
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> assertEqual "Expected wrong length error returned." (invalidEcdsaSignatureLengthError invalidSignature) err
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using invalid length signature should not be successful."
 
 verificationKeyNotOnCurveTest :: TestTree
 verificationKeyNotOnCurveTest = testCase "should return decode length error when verification key not present on curve used." $ do
-  let invalidVKey = "EEFDEA4CDB677750A420FEE807EACF21EB9898AE79B9768766E4FAA04A2D4A34"
+  let invalidVKey = "02EEFDEA4CDB677750A420FEE807EACF21EB9898AE79B9768766E4FAA04A2D4A34"
   result <- parseHexVerKey invalidVKey
   assertBool "Failed invalid verification key is treated as valid." $ isLeft result
   case result of
-    -- TODO Not helpful error message is returned for now
-    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> assertBool "Expected cannot decode key error." $ isInfixOf "cannot decode key" err
-    Left _ -> error "Test failed. Unexpected error encountred while decoding verification key not on the curve."
-    Right _ -> error "Error result is right which should not be the case."
+    -- Not helpful error message is returned for now could be better if the actual error was reported
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> assertEqual "Expected cannot decode key error." cannotDecodeVerificationKeyError err
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
 
 wrongVerificationKeyTest :: TestTree
 wrongVerificationKeyTest = testCase "should return False when trying to use wrong verification key." $ do

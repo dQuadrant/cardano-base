@@ -29,22 +29,19 @@ import Control.Exception (throw, try)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.UTF8 as BSU
 import qualified Data.Csv as Csv
-import Data.List (isInfixOf)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, testCase)
+import Test.Tasty.HUnit (assertEqual, testCase)
 import TestVector.Vectors
-  ( defaultLeftOverValueConvertedForDecoderError,
-    defaultMessage,
+  ( defaultMessage,
     defaultSKey,
     defaultSchnorrSignature,
     defaultVKey,
-    insufficientLengthError,
     schnorr256k1VKeyAndSigVerifyTestVectors,
     signAndVerifyTestVectors,
-    vectorsOutputCsvPath,
     wrongMessagesAndSignaturesTestVectors,
     wrongVerificationKeyTestVectors,
   )
+import Util.StringConstants (cannotDecodeVerificationKeyError, invalidSchnorrSignatureLengthError, invalidSchnorrVerificationKeyLengthError, unexpectedDecodingError, vectorsOutputCsvPath)
 import Util.Utils (convertToBytes, toHex)
 
 tests :: TestTree
@@ -58,7 +55,7 @@ tests =
 type CsvResult = (String, String, String, String, String)
 
 convertResultToCsvRecord :: String -> String -> String -> SchnorrSignatureResult -> CsvResult
-convertResultToCsvRecord sKey vKey msg (sig, veriResult) = (sKey, vKey, msg, toHex sig 4, show veriResult)
+convertResultToCsvRecord sKey vKey msg (sig, veriResult) = (sKey, drop 2 vKey, msg, toHex sig 4, show veriResult)
 
 testVectorsIO :: IO ()
 testVectorsIO = do
@@ -118,24 +115,13 @@ signAndVerifyTestVector (sKey, vKey, msg) = do
 verifyOnlyTestVector :: (String, String, String, String) -> IO CsvResult
 verifyOnlyTestVector (sKeyStr, vKeyStr, msg, sigStr) = do
   result <- verifyOnlyWithSigTestVector sKeyStr vKeyStr msg sigStr
-  pure (sKeyStr, vKeyStr, msg, sigStr, show $ snd result)
+  pure (sKeyStr, drop 2 vKeyStr, msg, sigStr, show $ snd result)
 
 -- Use another verification to verify the message sign by another sign key
 wrongVerificationKeyTestVector :: String -> IO CsvResult
 wrongVerificationKeyTestVector wrongVKey = do
   result <- schnorrSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage
   pure $ convertResultToCsvRecord defaultSKey wrongVKey defaultMessage result
-
--- Use verification key that is not on the curve
-verificationKeyNotOnCurveTestVector :: String -> IO CsvResult
-verificationKeyNotOnCurveTestVector wrongVKey = do
-  result <- try (verifyOnlyWithSigTestVector defaultSKey wrongVKey defaultMessage defaultSchnorrSignature) :: IO (Either DecoderError SchnorrSignatureResult)
-  case result of
-    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
-      assertBool "Expected cannot decode key error." $ isInfixOf "cannot decode key" err
-      pure (defaultSKey, wrongVKey, defaultMessage, defaultSchnorrSignature, "False")
-    Left _ -> error "Test failed encountered unexpected error on decoding verification key not on curve."
-    Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
 
 -- Sign using one message but verify using another message but right signature
 wrongMessageRightSignatureTestVector :: (String, String, String) -> IO CsvResult
@@ -154,29 +140,33 @@ invalidLengthVerificationKeyTestVector :: String -> IO CsvResult
 invalidLengthVerificationKeyTestVector invalidVKey = do
   result <- try (verifyOnlyWithSigTestVector defaultSKey invalidVKey defaultMessage defaultSchnorrSignature) :: IO (Either DecoderError SchnorrSignatureResult)
   case result of
-    Left ex -> do
-      case ex of
-        DecoderErrorLeftover _ leftOverValue -> do
-          assertBool "Error Leftovervalue must be as specified in vectors." $ isInfixOf defaultLeftOverValueConvertedForDecoderError (show leftOverValue)
-        DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err) -> do
-          assertBool "Expected end of input error." $ isInfixOf insufficientLengthError err
-        _ -> error "Test failed Unexpected decoder error occured. Which should not be the case."
-      pure (defaultSKey, invalidVKey, defaultMessage, defaultSchnorrSignature, "False")
-    Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
+      -- Already dropped first byte when parsing vectors so for error message also drop for invalid verification key
+      assertEqual "Expected wrong length error." (invalidSchnorrVerificationKeyLengthError $ drop 2 invalidVKey) err
+      pure (defaultSKey, drop 2 invalidVKey, defaultMessage, defaultSchnorrSignature, "False")
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using invalid length verification key should not be successful."
 
 -- Parse exsiting invalid signature and try to verify using vkey msg and signature only
 invalidLengthSignatureTestVector :: (String, String, String, String) -> IO CsvResult
 invalidLengthSignatureTestVector (sKeyStr, vKeyStr, msg, sigStr) = do
   result <- try (verifyOnlyWithSigTestVector sKeyStr vKeyStr msg sigStr) :: IO (Either DecoderError SchnorrSignatureResult)
   case result of
-    Left ex -> do
-      case ex of
-        DecoderErrorLeftover _ leftOverValue -> do
-          assertBool "Error Leftovervalue must be as specified in vectors." $ isInfixOf defaultLeftOverValueConvertedForDecoderError (show leftOverValue)
-        DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err) -> do
-          assertBool "Expected end of input error." $ isInfixOf insufficientLengthError err
-        _ -> error "Test failed Unexpected decoder error occured. Which should not be the case."
-      pure (sKeyStr, vKeyStr, msg, sigStr, "False")
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
+      assertEqual "Expected wrong length error." (invalidSchnorrSignatureLengthError sigStr) err
+      pure (sKeyStr, drop 2 vKeyStr, msg, sigStr, "False")
+    Left _ -> error unexpectedDecodingError
+    Right _ -> error "Test failed. Sign and verified when using invalid length signature should not be successful."
+
+-- Use verification key that is not on the curve
+verificationKeyNotOnCurveTestVector :: String -> IO CsvResult
+verificationKeyNotOnCurveTestVector wrongVKey = do
+  result <- try (verifyOnlyWithSigTestVector defaultSKey wrongVKey defaultMessage defaultSchnorrSignature) :: IO (Either DecoderError SchnorrSignatureResult)
+  case result of
+    Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
+      assertEqual "Expected cannot decode key error." cannotDecodeVerificationKeyError err
+      pure (defaultSKey, drop 2 wrongVKey, defaultMessage, defaultSchnorrSignature, "False")
+    Left _ -> error unexpectedDecodingError
     Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
 
 -- Simple sign and verify test vector function with sKey, vKey and message in string
@@ -215,7 +205,8 @@ schnorrVerify vKeyStr msg sig = do
 -- Convert vKeyInHex to appropirate vKey
 parseSchnorrVerKey :: String -> IO (VerKeyDSIGN SchnorrSecp256k1DSIGN)
 parseSchnorrVerKey vKeyHex = do
-  vKeyBytes <- convertToBytes "5820" vKeyHex
+  -- Drop first byte that is not used by schnorr
+  vKeyBytes <- convertToBytes $ drop 2 vKeyHex
   let vKeyE = decodeFull' vKeyBytes
   case vKeyE of
     Left err -> throw err
@@ -224,7 +215,7 @@ parseSchnorrVerKey vKeyHex = do
 -- Convert sKeyInHex to appropirate sKey
 parseSchnorrSignKey :: String -> IO (SignKeyDSIGN SchnorrSecp256k1DSIGN)
 parseSchnorrSignKey sKeyHex = do
-  sKeyBytes <- convertToBytes "5820" sKeyHex
+  sKeyBytes <- convertToBytes sKeyHex
   let sKeyE = decodeFull' sKeyBytes
   case sKeyE of
     Left err -> throw err
@@ -233,7 +224,7 @@ parseSchnorrSignKey sKeyHex = do
 -- Convert sigInHex to appropirate signature
 parseSchnorrSignature :: String -> IO (SigDSIGN SchnorrSecp256k1DSIGN)
 parseSchnorrSignature sigHex = do
-  sigBytes <- convertToBytes "5840" sigHex
+  sigBytes <- convertToBytes sigHex
   let sigE = decodeFull' sigBytes :: Either DecoderError (SigDSIGN SchnorrSecp256k1DSIGN)
   case sigE of
     Left err -> throw err
