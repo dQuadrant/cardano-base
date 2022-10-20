@@ -98,8 +98,6 @@ test-suite test-crypto-vectors
   hs-source-dirs:       vector-tests
   main-is:              Main.hs
   other-modules:
-    Test.EcdsaSecp256k1Tests
-    Test.SchnorrSecp256k1Tests
     Util.Utils
     Util.StringConstants
     TestVector.EcdsaSecp256k1Vectors
@@ -109,18 +107,13 @@ test-suite test-crypto-vectors
                       , bytestring
                       , text
                       , utf8-string
-                      , random-bytestring
                       , base16-bytestring
-                      , cassava
                       , cardano-binary
                       , cborg
                       , tasty
                       , tasty-hunit
                       , cardano-crypto-class
-
-
-
-                     
+                                   
   ghc-options:          -threaded -rtsopts -with-rtsopts=-N
 
 
