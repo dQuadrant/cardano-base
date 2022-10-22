@@ -1,6 +1,4 @@
-It contains test vectors for secp256k1.
-
-Tests including vectors for secp256k1 are defined on `vector-tests` and output vectors on csv format is in `csv-outputs` folder It includes:
+It contains tests for vectors that are used to test secp256k1 functionalities.
 
 **ECDSA**
     - Signing and verification successful
@@ -17,6 +15,3 @@ Tests including vectors for secp256k1 are defined on `vector-tests` and output v
     - Invalid verification key check
     - Invalid message check
     - Invalid signature check
-
-To generate the vectors csv output again run the tests:
-`cabal test test-crypto-vectors`

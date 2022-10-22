@@ -12,8 +12,7 @@
 
 module TestVector.EcdsaSecp256k1Vectors
   ( tests,
-    testVectorsIO,
-  )
+     )
 where
 
 -- from utf8-string
@@ -24,7 +23,6 @@ import Cardano.Crypto.DSIGN
     MessageHash,
     SigDSIGN,
     VerKeyDSIGN,
-    fromMessageHash,
     hashAndPack,
     signDSIGN,
     toMessageHash,
@@ -32,13 +30,11 @@ import Cardano.Crypto.DSIGN
   )
 import Cardano.Crypto.Hash.SHA3_256 (SHA3_256)
 import Codec.CBOR.Read (DeserialiseFailure (..))
-import Control.Exception (SomeException (..), throw, try)
-import qualified Data.ByteString.Lazy as BSL
+import Control.Exception (throw, try)
 import qualified Data.ByteString.UTF8 as BSU
-import qualified Data.Csv as Csv
 import Data.Proxy (Proxy (..))
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertEqual, testCase)
+import Test.Tasty.HUnit (assertEqual, testCase, assertBool)
 import TestVector.Vectors
   ( defaultEcdsaSignature,
     defaultMessage,
@@ -55,169 +51,108 @@ import Util.StringConstants
     invalidEcdsaSignatureLengthError,
     invalidEcdsaVerificationKeyLengthError,
     unexpectedDecodingError,
-    vectorsOutputCsvPath,
   )
-import Util.Utils (convertToBytes, toHex)
+import Util.Utils (convertToBytes, SignatureResult)
+import Data.Either (isRight, isLeft)
+import Data.Maybe (isNothing)
 
 tests :: TestTree
 tests =
   testGroup
     "EcdsaSecp256k1 Test Vectors"
-    [ testCase "Ecdsa Test vectors should run sucessfully and output a csv file." testVectorsIO
+    [
+      testCase "Test vector 1 - Verification should Pass when sign and verification is performed." $ signAndVerifyTestVector (signAndVerifyTestVectors !! 0),
+      testCase "Test vector 2 - Verification should Pass when sign and verification is performed." $ signAndVerifyTestVector (signAndVerifyTestVectors !! 1),
+      testCase "Test vector 3 - Verification should Pass when sign and verification is performed." $ signAndVerifyTestVector (signAndVerifyTestVectors !! 2),
+      testCase "Test vector 4 - Verification should Pass when sign and verification is performed." $ signAndVerifyTestVector (signAndVerifyTestVectors !! 3),
+      testCase "Test vector 5 - Verification should Pass when using given signature, vkey and message." $ verifyOnlyTestVector (ecdsa256k1VKeyAndSigVerifyTestVectors !! 0),
+      testCase "Test vector 6 - toMessageHash should return Nothing when using invalid length message hash." $ wrongMessageHashLengthTestVector (wrongLengthMessageHashTestVectors !! 0),
+      testCase "Test vector 7 - toMessageHash should return Nothing when using invalid length message hash." $ wrongMessageHashLengthTestVector (wrongLengthMessageHashTestVectors !! 1),
+      testCase "Test vector 8 - Verification should Fail when using wrong verification key." $ wrongVerificationKeyTestVector (wrongVerificationKeyTestVectors !! 0),
+      testCase "Test vector 9 - Verification should Fail when using verification key that is not on the curve." $ verificationKeyNotOnCurveTestVector (wrongVerificationKeyTestVectors !! 1),
+      testCase "Test vector 10 - Verification should Fail when using wrong message but right signature." $ wrongMessageRightSignatureTestVector (wrongMessagesAndSignaturesTestVectors !! 0),
+      testCase "Test vector 11 - Verification should Fail when using right message but wrong signature." $ rightMessageWrongSignatureTestVector (wrongMessagesAndSignaturesTestVectors !! 1),
+      testCase "Test vector 12 - Verification should Fail when using invalid length verification key." $ invalidLengthVerificationKeyTestVector (wrongVerificationKeyTestVectors !! 2),
+      testCase "Test vector 13 - Verification should Fail when using invalid length verification key." $ invalidLengthVerificationKeyTestVector (wrongVerificationKeyTestVectors !! 3),
+      testCase "Test vector 14 - Verification should Fail when using invalid length signature." $ invalidLengthSignatureTestVector (ecdsa256k1VKeyAndSigVerifyTestVectors !! 1),
+      testCase "Test vector 15 - Verification should Fail when using invalid length signature." $ invalidLengthSignatureTestVector (ecdsa256k1VKeyAndSigVerifyTestVectors !! 2)
     ]
 
---  skey    vkey    msg     msgHash sig     result
-type CsvResult = (String, String, String, String, String, String)
-
-convertResultToCsvRecord :: String -> String -> String -> EcdsaSignatureResult -> CsvResult
-convertResultToCsvRecord sKey vKey msg (sig, veriResult) = (sKey, vKey, msg, toHex (fromMessageHash $ hashMessage msg) 4, toHex sig 4, show veriResult)
-
-testVectorsIO :: IO ()
-testVectorsIO = do
-  -- Vectors for sign and verify for different skeys and messages
-  -- Note: Could be replaced with for loop but result gathering might be cumbersome for just 4 repitition
-  (sKey1, vKey1, msg1, mh1, sig1, result1) <- signAndVerifyTestVector (signAndVerifyTestVectors !! 0)
-  (sKey2, vKey2, msg2, mh2, sig2, result2) <- signAndVerifyTestVector (signAndVerifyTestVectors !! 1)
-  (sKey3, vKey3, msg3, mh3, sig3, result3) <- signAndVerifyTestVector (signAndVerifyTestVectors !! 2)
-  (sKey4, vKey4, msg4, mh4, sig4, result4) <- signAndVerifyTestVector (signAndVerifyTestVectors !! 3)
-
-  --Vector for verify using already generated signature and public key
-  (_, vKey5, msg5, mh5, sig5, result5) <- verifyOnlyTestVector (ecdsa256k1VKeyAndSigVerifyTestVectors !! 0)
-
-  -- --Vectors for wrong length of message hash
-  (sKey6, vKey6, _, mh6, _, result6) <- wrongSignMessageHashLengthTestVector (wrongLengthMessageHashTestVectors !! 0)
-  (sKey7, vKey7, _, mh7, _, result7) <- wrongSignMessageHashLengthTestVector (wrongLengthMessageHashTestVectors !! 1)
-  (sKey8, vKey8, _, mh8, _, result8) <- wrongVerifyMessageHashLengthTestVector (wrongLengthMessageHashTestVectors !! 0)
-  (sKey9, vKey9, _, mh9, _, result9) <- wrongVerifyMessageHashLengthTestVector (wrongLengthMessageHashTestVectors !! 1)
-
-  -- --Vector for wrong verification key used to verify using another signature
-  (sKey10, vKey10, msg10, mh10, sig10, result10) <- wrongVerificationKeyTestVector (wrongVerificationKeyTestVectors !! 0)
-
-  -- --Vector for verification key used that is not on curve
-  (sKey11, vKey11, msg11, mh11, sig11, result11) <- verificationKeyNotOnCurveTestVector (wrongVerificationKeyTestVectors !! 1)
-
-  -- --Vector for wrong message and signatures
-  (sKey12, vKey12, msg12, mh12, sig12, result12) <- wrongMessageRightSignatureTestVector (wrongMessagesAndSignaturesTestVectors !! 0)
-  (sKey13, vKey13, msg13, mh13, sig13, result13) <- rightMessageWrongSignatureTestVector (wrongMessagesAndSignaturesTestVectors !! 1)
-
-  -- --Vector for invalid verification key length check
-  (_, vKey14, msg14, mh14, sig14, result14) <- invalidLengthVerificationKeyTestVector (wrongVerificationKeyTestVectors !! 2)
-  (_, vKey15, msg15, mh15, sig15, result15) <- invalidLengthVerificationKeyTestVector (wrongVerificationKeyTestVectors !! 3)
-
-  -- --Vector for invalid signature length check
-  (_, vKey16, msg16, mh16, sig16, result16) <- invalidLengthSignatureTestVector (ecdsa256k1VKeyAndSigVerifyTestVectors !! 1)
-  (_, vKey17, msg17, mh17, sig17, result17) <- invalidLengthSignatureTestVector (ecdsa256k1VKeyAndSigVerifyTestVectors !! 2)
-
-  let finalResult =
-        [ ("index", "secret key", "public key", "message", "message hash", "signature", "verification result", "comment"),
-          ("1", sKey1, vKey1, msg1, mh1, sig1, result1, ""),
-          ("2", sKey2, vKey2, msg2, mh2, sig2, result2, ""),
-          ("3", sKey3, vKey3, msg3, mh3, sig3, result3, ""),
-          ("4", sKey4, vKey4, msg4, mh4, sig4, result4, ""),
-          ("5", "", vKey5, msg5, mh5, sig5, result5, ""),
-          ("6", sKey6, vKey6, "", mh6, "", result6, "Invalid sign message hash length 1 used. Verification should be false."),
-          ("7", sKey7, vKey7, "", mh7, "", result7, "Invalid sign message hash length 33 used. Verification should be false."),
-          ("8", sKey8, vKey8, "", mh8, "", result8, "Invalid verify message hash length 1 used. Verification should be false."),
-          ("9", sKey9, vKey9, "", mh9, "", result9, "Invalid verify message hash length 33 used. Verification should be false."),
-          ("10", sKey10, vKey10, msg10, mh10, sig10, result10, "Wrong Verification key is used to verify signature signed by another signing key. Verification should be false."),
-          ("11", sKey11, vKey11, msg11, mh11, sig11, result11, "Verification key not on the curve. Verification should be false."),
-          ("12", sKey12, vKey12, msg12, mh12, sig12, result12, "Wrong message but right signature used. Verification should be false."),
-          ("13", sKey13, vKey13, msg13, mh13, sig13, result13, "Right message but wrong signature is used. Verification should be false."),
-          ("14", "", vKey14, msg14, mh14, sig14, result14, "Invalid Verification key length is used. Verification should be false."),
-          ("15", "", vKey15, msg15, mh15, sig15, result15, "Invalid Verification key length is used. Verification should be false."),
-          ("16", "", vKey16, msg16, mh16, sig16, result16, "Invalid Signature length is used. Verification should be false."),
-          ("17", "", vKey17, msg17, mh17, sig17, result17, "Invalid Signature length is used. Verification should be false.")
-        ]
-  BSL.writeFile (vectorsOutputCsvPath ++ "ecdsa-secp256k1-test-vectors.csv") (Csv.encode finalResult)
-
 --Whole sign and verify flow test vector
-signAndVerifyTestVector :: (String, String, String) -> IO CsvResult
+signAndVerifyTestVector :: (String, String, String) -> IO ()
 signAndVerifyTestVector (sKey, vKey, msg) = do
   result <- ecdsaSignAndVerifyTestVector sKey vKey msg
-  pure $ convertResultToCsvRecord sKey vKey msg result
+  assertBool "Test failed. Sign and verification should be successful." $ isRight result
 
 -- Parse exsiting signature and verify using vkey msg and signature only
-verifyOnlyTestVector :: (String, String, String, String) -> IO CsvResult
+verifyOnlyTestVector :: (String, String, String, String) -> IO ()
 verifyOnlyTestVector (sKeyStr, vKeyStr, msg, sigStr) = do
   result <- verifyOnlyWithSigTestVector sKeyStr vKeyStr msg sigStr
-  pure ("", vKeyStr, msg, toHex (fromMessageHash $ hashMessage msg) 4, sigStr, show $ snd result)
+  assertBool "Test failed. Sign and verification should be successful." $ isRight result
 
 -- Pass invalid length message hash in signing stage
-wrongSignMessageHashLengthTestVector :: String -> IO CsvResult
-wrongSignMessageHashLengthTestVector msg = do
-  let invalidMsgHash = toMessageHash $ BSU.fromString msg
-  result <- try (ecdsaSignAndVerify defaultSKey defaultVKey Nothing Nothing invalidMsgHash invalidMsgHash Nothing) :: IO (Either SomeException EcdsaSignatureResult)
-  case result of
-    Left _ -> pure (defaultSKey, defaultVKey, "", msg, "", "False")
-    Right _ -> error "Test failed. Sign and verified when using wrong verification message hash length."
-
--- Pass invalid length message hash in verification stage
-wrongVerifyMessageHashLengthTestVector :: String -> IO CsvResult
-wrongVerifyMessageHashLengthTestVector msg = do
-  let invalidMsgHash = toMessageHash $ BSU.fromString msg
-      validMsgHash = hashMessage msg
-  result <- try (ecdsaSignAndVerify defaultSKey defaultVKey Nothing Nothing (Just validMsgHash) invalidMsgHash Nothing) :: IO (Either SomeException EcdsaSignatureResult)
-  case result of
-    Left _ -> pure (defaultSKey, defaultVKey, "", msg, "", "False")
-    Right _ -> error "Test failed. Sign and verified when using wrong verification message hash length."
+wrongMessageHashLengthTestVector :: String -> IO ()
+wrongMessageHashLengthTestVector msg = do
+  let msgHash = toMessageHash $ BSU.fromString msg
+  assertBool "Test failed. Wrong message hash length is treated as right." $ isNothing msgHash
 
 -- Use another verification to verify the message sign by another sign key
-wrongVerificationKeyTestVector :: String -> IO CsvResult
+wrongVerificationKeyTestVector :: String -> IO ()
 wrongVerificationKeyTestVector wrongVKey = do
   result <- ecdsaSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage
-  pure $ convertResultToCsvRecord defaultSKey wrongVKey defaultMessage result
+  assertBool "Test failed. Verification successful on using wrong verification key." $ isLeft result
 
 -- Sign using one message but verify using another message but right signature
-wrongMessageRightSignatureTestVector :: (String, String, String) -> IO CsvResult
+wrongMessageRightSignatureTestVector :: (String, String, String) -> IO ()
 wrongMessageRightSignatureTestVector (signMsg, verifyMsg, _) = do
   result <- ecdsaSignAndVerify defaultSKey defaultVKey (Just signMsg) (Just verifyMsg) Nothing Nothing Nothing
-  pure $ convertResultToCsvRecord defaultSKey defaultVKey verifyMsg result
+  assertBool "Test failed. Verification successful on using wrong message." $ isLeft result
 
 -- Sign using one message and verify using same message but wrong signature
-rightMessageWrongSignatureTestVector :: (String, String, String) -> IO CsvResult
+rightMessageWrongSignatureTestVector :: (String, String, String) -> IO ()
 rightMessageWrongSignatureTestVector (signMsg, verifyMsg, signature) = do
   result <- ecdsaSignAndVerify defaultSKey defaultVKey (Just signMsg) (Just verifyMsg) Nothing Nothing (Just signature)
-  pure $ convertResultToCsvRecord defaultSKey defaultVKey signMsg result
+  assertBool "Test failed. Verification successful on using wrong signature." $ isLeft result
 
 -- Use invalid verification key length and try to verify using vkey msg and signature only
-invalidLengthVerificationKeyTestVector :: String -> IO CsvResult
+invalidLengthVerificationKeyTestVector :: String -> IO ()
 invalidLengthVerificationKeyTestVector invalidVKey = do
-  result <- try (verifyOnlyWithSigTestVector defaultSKey invalidVKey defaultMessage defaultEcdsaSignature) :: IO (Either DecoderError EcdsaSignatureResult)
+  result <- try (verifyOnlyWithSigTestVector defaultSKey invalidVKey defaultMessage defaultEcdsaSignature) :: IO (Either DecoderError SignatureResult)
+  assertBool "Test failed. Verification successful on using wrong verification key length." $ isLeft result
   case result of
     Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
       assertEqual "Expected wrong length error." (invalidEcdsaVerificationKeyLengthError invalidVKey) err
-      pure (defaultSKey, invalidVKey, defaultMessage, toHex (fromMessageHash $ hashMessage defaultMessage) 4, defaultEcdsaSignature, "False")
     Left _ -> error unexpectedDecodingError
     Right _ -> error "Test failed. Sign and verified when using invalid length verification key should not be successful."
 
 -- Parse exsiting invalid signature and try to verify using vkey msg and signature only
-invalidLengthSignatureTestVector :: (String, String, String, String) -> IO CsvResult
+invalidLengthSignatureTestVector :: (String, String, String, String) -> IO ()
 invalidLengthSignatureTestVector (sKeyStr, vKeyStr, msg, sigStr) = do
-  result <- try (verifyOnlyWithSigTestVector sKeyStr vKeyStr msg sigStr) :: IO (Either DecoderError EcdsaSignatureResult)
+  result <- try (verifyOnlyWithSigTestVector sKeyStr vKeyStr msg sigStr) :: IO (Either DecoderError SignatureResult)
+  assertBool "Test failed. Verification successful on using wrong signature length." $ isLeft result
   case result of
     Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
       assertEqual "Expected wrong length error." (invalidEcdsaSignatureLengthError sigStr) err
-      pure ("", vKeyStr, msg, toHex (fromMessageHash $ hashMessage msg) 4, sigStr, "False")
     Left _ -> error unexpectedDecodingError
     Right _ -> error "Test failed. Sign and verified when using invalid length signature should not be successful."
 
 -- Use verification key that is not on the curve
-verificationKeyNotOnCurveTestVector :: String -> IO CsvResult
+verificationKeyNotOnCurveTestVector :: String -> IO ()
 verificationKeyNotOnCurveTestVector wrongVKey = do
-  result <- try (ecdsaSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage) :: IO (Either DecoderError EcdsaSignatureResult)
+  result <- try (ecdsaSignAndVerifyTestVector defaultSKey wrongVKey defaultMessage) :: IO (Either DecoderError SignatureResult)
+  assertBool "Test failed. Verification successful on using verification key not on the curve." $ isLeft result
   case result of
     Left (DecoderErrorDeserialiseFailure _ (DeserialiseFailure _ err)) -> do
       assertEqual "Expected cannot decode key error." cannotDecodeVerificationKeyError err
-      pure (defaultSKey, wrongVKey, defaultMessage, toHex (fromMessageHash $ hashMessage defaultMessage) 4, defaultEcdsaSignature, "False")
     Left _ -> error unexpectedDecodingError
     Right _ -> error "Test failed. Sign and verified when using verification not on the curve should not be successful."
 
 -- Simple sign and verify test vector function with sKey, vKey and message in string
-ecdsaSignAndVerifyTestVector :: String -> String -> String -> IO EcdsaSignatureResult
+ecdsaSignAndVerifyTestVector :: String -> String -> String -> IO SignatureResult
 ecdsaSignAndVerifyTestVector sKeyStr vKeyStr signMsg = ecdsaSignAndVerify sKeyStr vKeyStr (Just signMsg) (Just signMsg) Nothing Nothing Nothing
 
 -- Simple verify only test vector with verification message and signature in string
-verifyOnlyWithSigTestVector :: String -> String -> String -> String -> IO EcdsaSignatureResult
+verifyOnlyWithSigTestVector :: String -> String -> String -> String -> IO SignatureResult
 verifyOnlyWithSigTestVector sKeyStr vKeyStr verifyMsg sig = ecdsaSignAndVerify sKeyStr vKeyStr Nothing (Just verifyMsg) Nothing Nothing (Just sig)
 
 signMessageHashNotPresent :: String
@@ -227,7 +162,7 @@ verifyMessageHashNotPresent :: String
 verifyMessageHashNotPresent = "Sign Message or message hash must be present. Encountered both Nothing."
 
 -- Sign and verify flow with optional message hash for sign and verify, optional signature and use them appropriately for sign and verify
-ecdsaSignAndVerify :: String -> String -> Maybe String -> Maybe String -> Maybe MessageHash -> Maybe MessageHash -> Maybe String -> IO EcdsaSignatureResult
+ecdsaSignAndVerify :: String -> String -> Maybe String -> Maybe String -> Maybe MessageHash -> Maybe MessageHash -> Maybe String -> IO SignatureResult
 ecdsaSignAndVerify sKeyStr vKeyStr signMsgM verifyMsgM signHashM verifyHashM sigM = do
   let signMh = case (signMsgM, signHashM) of
         (_, Just msgHash) -> msgHash
@@ -240,8 +175,7 @@ ecdsaSignAndVerify sKeyStr vKeyStr signMsgM verifyMsgM signHashM verifyHashM sig
   sig <- case sigM of
     Just sig' -> parseEcdsaSignature sig'
     Nothing -> ecdsaSign sKeyStr signMh
-  result <- ecdsaVerify vKeyStr verifyMh sig
-  pure (sig, result)
+  ecdsaVerify vKeyStr verifyMh sig
 
 -- Sign the message hash by parsing the sign key in string
 ecdsaSign :: String -> MessageHash -> IO (SigDSIGN EcdsaSecp256k1DSIGN)
@@ -251,13 +185,10 @@ ecdsaSign sKeyStr mh = do
 
 -- Verify using vKey in string parse it, use message hash and ecdsa signature
 -- to verify it and return results
-ecdsaVerify :: String -> MessageHash -> SigDSIGN EcdsaSecp256k1DSIGN -> IO Bool
+ecdsaVerify :: String -> MessageHash -> SigDSIGN EcdsaSecp256k1DSIGN -> IO SignatureResult
 ecdsaVerify vKeyStr mh sig = do
   vKey <- parseEcdsaVerKey vKeyStr
-  let result = verifyDSIGN () vKey mh sig
-  case result of
-    Left _ -> pure False
-    Right _ -> pure True
+  pure $ verifyDSIGN () vKey mh sig
 
 --Hash message using SHA3_256
 hashMessage :: String -> MessageHash
@@ -266,7 +197,6 @@ hashMessage msg = hashAndPack (Proxy @SHA3_256) $ BSU.fromString msg
 -- Convert vKeyInHex to appropirate vKey
 parseEcdsaVerKey :: String -> IO (VerKeyDSIGN EcdsaSecp256k1DSIGN)
 parseEcdsaVerKey vKeyHex = do
-  -- Only even-y cordinate is parsed by this function
   vKeyBytes <- convertToBytes vKeyHex
   let vKeyE = decodeFull' vKeyBytes
   case vKeyE of
@@ -290,6 +220,3 @@ parseEcdsaSignature sigHex = do
   case sigE of
     Left err -> throw err
     Right sig -> pure sig
-
--- Holder for signature result with verified true or false
-type EcdsaSignatureResult = (SigDSIGN EcdsaSecp256k1DSIGN, Bool)

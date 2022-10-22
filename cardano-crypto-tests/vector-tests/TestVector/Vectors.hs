@@ -35,6 +35,7 @@ defaultLeftOverValue :: String
 defaultLeftOverValue = "FF"
 
 -- List of test vectors used row wisely
+-- These vectors contains secret key which first signs the given message and verifies using generated signature
 signAndVerifyTestVectors :: [(String, String, String)]
 signAndVerifyTestVectors =
   [ -- (secretKey, publicKey, message)
@@ -44,6 +45,7 @@ signAndVerifyTestVectors =
     ("0B432B2677937381AEF05BB02A66ECD012773062CF3FA2549E44F58ED2401710", "0325D1DFF95105F5253C4022F628A996AD3A0D95FBF21D468A1B33F8C160D8F517", "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
   ]
 
+-- It is used for testing already given message, signature and vKey so that verification should be sucessful without needing secret key to sign the message.
 ecdsa256k1VKeyAndSigVerifyTestVectors :: [(String, String, String, String)]
 ecdsa256k1VKeyAndSigVerifyTestVectors =
   -- secret key, public key, message, signature

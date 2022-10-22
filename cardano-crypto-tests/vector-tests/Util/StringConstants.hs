@@ -9,8 +9,7 @@
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Util.StringConstants
-  ( vectorsOutputCsvPath,
-    invalidEcdsaSignatureLengthError,
+  ( invalidEcdsaSignatureLengthError,
     invalidSchnorrVerificationKeyLengthError,
     invalidEcdsaVerificationKeyLengthError,
     invalidSchnorrSignatureLengthError,
@@ -29,9 +28,6 @@ import Cardano.Crypto.SECP256K1.Constants
 import Data.Data (Proxy (Proxy))
 import GHC.TypeLits (natVal)
 import Util.Utils (hexLength)
-
-vectorsOutputCsvPath :: String
-vectorsOutputCsvPath = "vector-tests/csv-outputs/"
 
 invalidEcdsaVerificationKeyLengthError :: String -> String
 invalidEcdsaVerificationKeyLengthError = invalidVerificationKeyLengthError $ natVal $ Proxy @SECP256K1_ECDSA_PUBKEY_BYTES

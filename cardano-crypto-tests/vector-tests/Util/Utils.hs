@@ -13,7 +13,8 @@ module Util.Utils
     byteStringToString,
     toHexByteString,
     convertToBytes,
-    hexLength
+    hexLength,
+    SignatureResult
   )
 where
 
@@ -55,3 +56,5 @@ convertToBytes hexStr = do
 
 hexLength :: String -> Int
 hexLength hexStr = length hexStr `div` 2
+
+type SignatureResult = (Either String ())
