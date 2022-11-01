@@ -60,7 +60,7 @@ library
                         Test.Crypto.Vector.Secp256k1DSIGN
                         Test.Crypto.Vector.Vectors
                         Test.Crypto.Vector.StringConstants
-                        Test.Crypto.Vector.VectorUtil
+                        Test.Crypto.Vector.SerializationUtils
 
   build-depends:        base
                       , bytestring
