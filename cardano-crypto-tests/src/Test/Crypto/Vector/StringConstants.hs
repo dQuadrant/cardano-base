@@ -27,25 +27,24 @@ import Cardano.Crypto.SECP256K1.Constants
   )
 import Data.Data (Proxy (Proxy))
 import GHC.TypeLits (natVal)
-import Test.Crypto.Vector.VectorUtil (hexLength)
 
-invalidEcdsaVerKeyLengthError :: String -> String
+invalidEcdsaVerKeyLengthError :: Integer -> String
 invalidEcdsaVerKeyLengthError = invalidVerKeyLengthError $ natVal $ Proxy @SECP256K1_ECDSA_PUBKEY_BYTES
 
-invalidSchnorrVerKeyLengthError :: String -> String
+invalidSchnorrVerKeyLengthError :: Integer -> String
 invalidSchnorrVerKeyLengthError = invalidVerKeyLengthError $ natVal $ Proxy @SECP256K1_SCHNORR_PUBKEY_BYTES
 
-invalidVerKeyLengthError :: Integer -> String -> String
-invalidVerKeyLengthError expectedLength actualKey = "decodeVerKeyDSIGN: wrong length, expected " ++ show expectedLength ++ " bytes but got " ++ show (hexLength actualKey)
+invalidVerKeyLengthError :: Integer -> Integer -> String
+invalidVerKeyLengthError expectedLength actualLength = "decodeVerKeyDSIGN: wrong length, expected " ++ show expectedLength ++ " bytes but got " ++ show actualLength
 
-invalidEcdsaSigLengthError :: String -> String
+invalidEcdsaSigLengthError :: Integer -> String
 invalidEcdsaSigLengthError = invalidSigLengthError $ natVal $ Proxy @SECP256K1_ECDSA_SIGNATURE_BYTES
 
-invalidSchnorrSigLengthError :: String -> String
+invalidSchnorrSigLengthError :: Integer -> String
 invalidSchnorrSigLengthError = invalidSigLengthError $ natVal $ Proxy @SECP256K1_SCHNORR_SIGNATURE_BYTES
 
-invalidSigLengthError :: Integer -> String -> String
-invalidSigLengthError expectedLength actualSig = "decodeSigDSIGN: wrong length, expected " ++ show expectedLength ++ " bytes but got " ++ show (hexLength actualSig)
+invalidSigLengthError :: Integer -> Integer -> String
+invalidSigLengthError expectedLength actualLength = "decodeSigDSIGN: wrong length, expected " ++ show expectedLength ++ " bytes but got " ++ show actualLength
 
 cannotDecodeVerificationKeyError :: String
 cannotDecodeVerificationKeyError = "decodeVerKeyDSIGN: cannot decode key"

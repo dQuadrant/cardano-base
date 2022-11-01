@@ -107,7 +107,6 @@ negativeSignatureTest ::
     Signable v a,
     ToSignable v a
   ) =>
-  -- Proxy v ->
   (VerKeyDSIGN v, ByteString, SigDSIGN v) ->
   TestTree
 negativeSignatureTest (vKey,msg,sig) =
