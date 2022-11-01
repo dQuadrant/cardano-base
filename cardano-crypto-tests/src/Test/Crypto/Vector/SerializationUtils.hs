@@ -10,7 +10,7 @@ module Test.Crypto.Vector.SerializationUtils
     vKeyParser,
     sigParser,
     drop,
-    stringToByteString,
+    encodeUtf8,
     hexByteStringLength
   )
 where
@@ -64,6 +64,5 @@ vKeyParser (HexCBOR bs) = unsafeDeserialize' bs
 sigParser :: forall d. (FromCBOR (SigDSIGN d)) => HexStringInCBOR -> SigDSIGN d
 sigParser (HexCBOR bs) = unsafeDeserialize' bs
 
--- Simple string to bytestring converter using utf8 encoding
-stringToByteString :: String -> ByteString
-stringToByteString = BSU.fromString
+encodeUtf8 :: String -> ByteString
+encodeUtf8 = BSU.fromString
