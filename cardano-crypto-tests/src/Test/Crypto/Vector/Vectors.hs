@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use bimap" #-}
@@ -21,6 +22,7 @@ module Test.Crypto.Vector.Vectors
     wrongLengthVerKeyTestVectorsRaw,
     ecdsaWrongLengthSigTestVectorsRaw,
     schnorrWrongLengthSigTestVectorsRaw,
+    ecdsaNegSigTestVectors
   )
 where
 
@@ -31,8 +33,8 @@ import Cardano.Crypto.DSIGN
     SchnorrSecp256k1DSIGN,
   )
 import Data.ByteString (ByteString)
-import Test.Crypto.Vector.VectorUtil
-  ( HexString (..),
+import Test.Crypto.Vector.SerializationUtils
+  ( HexStringInCBOR (..),
     sKeyParser,
     sigParser,
     stringToByteString,
@@ -67,6 +69,11 @@ ecdsaVerKeyAndSigVerifyTestVectors :: (VerKeyDSIGN EcdsaSecp256k1DSIGN, ByteStri
 ecdsaVerKeyAndSigVerifyTestVectors =
   (vKeyParser "02599de3e582e2a3779208a210dfeae8f330b9af00a47a7fb22e9bb8ef596f301b", stringToByteString "0000000000000000000000000000000000000000000000000000000000000000", sigParser "354b868c757ef0b796003f7c23dd754d2d1726629145be2c7b7794a25fec80a06254f0915935f33b91bceb16d46ff2814f659e9b6791a4a21ff8764b78d7e114")
 
+ecdsaNegSigTestVectors :: (VerKeyDSIGN EcdsaSecp256k1DSIGN, ByteString, SigDSIGN EcdsaSecp256k1DSIGN)
+ecdsaNegSigTestVectors =
+  (vKeyParser "02599de3e582e2a3779208a210dfeae8f330b9af00a47a7fb22e9bb8ef596f301b", stringToByteString "0000000000000000000000000000000000000000000000000000000000000000", sigParser "354b868c757ef0b796003f7c23dd754d2d1726629145be2c7b7794a25fec80a09dab0f6ea6ca0cc46e4314e92b900d7d6b493e4b47b6fb999fd9e841575e602d")
+
+
 -- It is used for testing already given message, signature and vKey so that Ver should be sucessful without needing secret key to sign the message for schnorr.
 schnorrVerKeyAndSigVerifyTestVectors :: (VerKeyDSIGN SchnorrSecp256k1DSIGN, ByteString, SigDSIGN SchnorrSecp256k1DSIGN)
 schnorrVerKeyAndSigVerifyTestVectors =
@@ -88,34 +95,28 @@ wrongSchnorrVerKeyTestVector :: VerKeyDSIGN SchnorrSecp256k1DSIGN
 wrongSchnorrVerKeyTestVector = vKeyParser "D69C3509BB99E412E68B0FE8544E72837DFA30746D8BE2AA65975F29D22DC7B9"
 
 -- Raw string verification key that is not on the curve should result in ver key parse failed
-verKeyNotOnCurveTestVectorRaw :: HexString
-verKeyNotOnCurveTestVectorRaw = HexString "02EEFDEA4CDB677750A420FEE807EACF21EB9898AE79B9768766E4FAA04A2D4A34"
+verKeyNotOnCurveTestVectorRaw :: HexStringInCBOR
+verKeyNotOnCurveTestVectorRaw = "02EEFDEA4CDB677750A420FEE807EACF21EB9898AE79B9768766E4FAA04A2D4A34"
 
 -- Parse these vectors and expect the errors on tests with parity bit
-wrongLengthVerKeyTestVectorsRaw :: [HexString]
-wrongLengthVerKeyTestVectorsRaw =
-  map
-    HexString
+wrongLengthVerKeyTestVectorsRaw :: [HexStringInCBOR]
+wrongLengthVerKeyTestVectorsRaw =  
     [ -- Ver key of length 30 bytes
-      "02DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502B",
+      "02DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B50",
       -- Ver key of length 34 bytes
       "02DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659FF"
     ]
 
 -- Raw hexstring to be used in invalid length signature parser tests for ecdsa
-ecdsaWrongLengthSigTestVectorsRaw :: [HexString]
+ecdsaWrongLengthSigTestVectorsRaw :: [HexStringInCBOR]
 ecdsaWrongLengthSigTestVectorsRaw =
-  map
-    HexString
     [ "354b868c757ef0b796003f7c23dd754d2d1726629145be2c7b7794a25fec80a06254f0915935f33b91bceb16d46ff2814f659e9b6791a4a21ff8764b78d7e1",
       "354b868c757ef0b796003f7c23dd754d2d1726629145be2c7b7794a25fec80a06254f0915935f33b91bceb16d46ff2814f659e9b6791a4a21ff8764b78d7e114FF"
     ]
 
 -- Raw hexstring to be used in invalid length signature parser tests for schnorr
-schnorrWrongLengthSigTestVectorsRaw :: [HexString]
+schnorrWrongLengthSigTestVectorsRaw :: [HexStringInCBOR]
 schnorrWrongLengthSigTestVectorsRaw =
-  map
-    HexString
     [ "5a56da88e6fd8419181dec4d3dd6997bab953d2fc71ab65e23cfc9e7e3d1a310613454a60f6703819a39fdac2a410a094442afd1fc083354443e8d8bb4461a",
       "5a56da88e6fd8419181dec4d3dd6997bab953d2fc71ab65e23cfc9e7e3d1a310613454a60f6703819a39fdac2a410a094442afd1fc083354443e8d8bb4461a9bFF"
     ]

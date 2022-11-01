@@ -43,7 +43,7 @@ import Test.Crypto.Vector.StringConstants
     invalidSchnorrVerKeyLengthError,
     unexpectedDecodingError,
   )
-import Test.Crypto.Vector.VectorUtil as Utils (HexString (..), convertToBytes, drop)
+import Test.Crypto.Vector.SerializationUtils as Utils (HexStringInCBOR (..), drop, hexByteStringLength)
 import Test.Crypto.Vector.Vectors
   ( defaultMessage,
     defaultSKey,
@@ -58,7 +58,7 @@ import Test.Crypto.Vector.Vectors
     wrongEcdsaVerKeyTestVector,
     wrongLengthMessageHashTestVectors,
     wrongLengthVerKeyTestVectorsRaw,
-    wrongSchnorrVerKeyTestVector,
+    wrongSchnorrVerKeyTestVector, ecdsaNegSigTestVectors
   )
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
@@ -77,42 +77,60 @@ tests =
       testGroup
         "EcdsaSecp256k1"
         [ signAndVerifyTest ecdsaProxy,
-          verifyOnlyTest ecdsaProxy ecdsaVerKeyAndSigVerifyTestVectors,
+          verifyOnlyTest ecdsaVerKeyAndSigVerifyTestVectors,
           wrongMessageHashLengthTest,
-          mismatchSignKeyVerKeyTest ecdsaProxy wrongEcdsaVerKeyTestVector,
-          mismatchMessageSignatureTest ecdsaProxy ecdsaMismatchMessageAndSignature,
+          mismatchSignKeyVerKeyTest wrongEcdsaVerKeyTestVector,
+          mismatchMessageSignatureTest ecdsaMismatchMessageAndSignature,
           verKeyNotOnCurveParserTest ecdsaProxy verKeyNotOnCurveTestVectorRaw,
           invalidLengthVerKeyParserTest ecdsaProxy wrongLengthVerKeyTestVectorsRaw invalidEcdsaVerKeyLengthError,
-          invalidLengthSignatureParserTest ecdsaProxy ecdsaWrongLengthSigTestVectorsRaw invalidEcdsaSigLengthError
+          invalidLengthSignatureParserTest ecdsaProxy ecdsaWrongLengthSigTestVectorsRaw invalidEcdsaSigLengthError,
+          negativeSignatureTest ecdsaNegSigTestVectors
         ],
       testGroup
         "SchnorrSecp256k1"
         [ signAndVerifyTest schnorrProxy,
-          verifyOnlyTest schnorrProxy schnorrVerKeyAndSigVerifyTestVectors,
-          mismatchSignKeyVerKeyTest schnorrProxy wrongSchnorrVerKeyTestVector,
-          mismatchMessageSignatureTest schnorrProxy schnorrMismatchMessageAndSignature,
-          -- Drop first byte in the case of schnorr for verification key
-          verKeyNotOnCurveParserTest schnorrProxy (Utils.drop 2 verKeyNotOnCurveTestVectorRaw),
-          invalidLengthVerKeyParserTest schnorrProxy (map (Utils.drop 2) wrongLengthVerKeyTestVectorsRaw) invalidSchnorrVerKeyLengthError,
+          verifyOnlyTest schnorrVerKeyAndSigVerifyTestVectors,
+          mismatchSignKeyVerKeyTest wrongSchnorrVerKeyTestVector,
+          mismatchMessageSignatureTest schnorrMismatchMessageAndSignature,
+          -- Note: First byte is dropped for schnorr as it doesn't require Y-cordinate information and assumed to be even and our vectors also contains Y-information.
+          verKeyNotOnCurveParserTest schnorrProxy (Utils.drop 1 verKeyNotOnCurveTestVectorRaw),
+          invalidLengthVerKeyParserTest schnorrProxy (map (Utils.drop 1) wrongLengthVerKeyTestVectorsRaw) invalidSchnorrVerKeyLengthError,
           invalidLengthSignatureParserTest schnorrProxy schnorrWrongLengthSigTestVectorsRaw invalidSchnorrSigLengthError
         ]
     ]
 
-type ErrorReportFunction = String -> String
+
+negativeSignatureTest ::
+  forall v a. (
+    DSIGNAlgorithm v,
+    ContextDSIGN v ~ (),
+    Signable v a,
+    ToSignable v a
+  ) =>
+  -- Proxy v ->
+  (VerKeyDSIGN v, ByteString, SigDSIGN v) ->
+  TestTree
+negativeSignatureTest (vKey,msg,sig) =
+  testCase "Verification should fail when using negative signature." $ do
+    let result = verifyDSIGN () vKey (toSignable (Proxy @v) msg) sig
+    assertBool "Test failed. Verification should be false for negative signature." $ isLeft result
+
+
+type InvalidLengthErrorFunction = Integer -> String
 
 invalidLengthSignatureParserTest ::
   forall v.
   ( FromCBOR (SigDSIGN v)
   ) =>
   Proxy v ->
-  [HexString] ->
-  ErrorReportFunction ->
+  [HexStringInCBOR] ->
+  InvalidLengthErrorFunction ->
   TestTree
 invalidLengthSignatureParserTest _ invalidLengthSigs errorF =
   testCase "Parsing should fail when using invalid length signatures." $
-    forM_ invalidLengthSigs $ \invalidSig@(HexString hs) -> do
+    forM_ invalidLengthSigs $ \invalidSig -> do
       let (DeserialiseFailure _ actualError) = invalidSigParserTest (Proxy @v) invalidSig
-      assertEqual "Expected invalid length signature error.." (errorF hs) actualError
+      assertEqual "Expected invalid length signature error.." (errorF $ Utils.hexByteStringLength invalidSig) actualError
 
 -- Try to parse the raw string into signature key and return the deserialize error
 invalidSigParserTest ::
@@ -120,7 +138,7 @@ invalidSigParserTest ::
   ( FromCBOR (SigDSIGN v)
   ) =>
   Proxy v ->
-  HexString ->
+  HexStringInCBOR ->
   DeserialiseFailure
 invalidSigParserTest _ rawSig = do
   let result = fullSigParser (Proxy @v) rawSig
@@ -135,9 +153,9 @@ fullSigParser ::
   ( FromCBOR (SigDSIGN v)
   ) =>
   Proxy v ->
-  HexString ->
+  HexStringInCBOR ->
   Either DecoderError (SigDSIGN v)
-fullSigParser _ (HexString hs) = (decodeFull' . convertToBytes) hs
+fullSigParser _ (HexCBOR hs) = decodeFull' hs
 
 -- Try to parse invalid length raw verification key
 invalidLengthVerKeyParserTest ::
@@ -145,14 +163,14 @@ invalidLengthVerKeyParserTest ::
   ( FromCBOR (VerKeyDSIGN v)
   ) =>
   Proxy v ->
-  [HexString] ->
-  ErrorReportFunction ->
+  [HexStringInCBOR] ->
+  InvalidLengthErrorFunction ->
   TestTree
 invalidLengthVerKeyParserTest _ invalidLengthVKeys errorF =
   testCase "Parsing should fail when using invalid length verification keys." $
-    forM_ invalidLengthVKeys $ \invalidVKey@(HexString hs) -> do
+    forM_ invalidLengthVKeys $ \invalidVKey -> do
       let (DeserialiseFailure _ actualError) = invalidVerKeyParserTest (Proxy @v) invalidVKey
-      assertEqual "Expected invalid length verification key error." (errorF hs) actualError
+      assertEqual "Expected invalid length verification key error." (errorF $ Utils.hexByteStringLength invalidVKey) actualError
 
 -- Try to parse raw verification key string and e
 verKeyNotOnCurveParserTest ::
@@ -160,7 +178,7 @@ verKeyNotOnCurveParserTest ::
   ( FromCBOR (VerKeyDSIGN v)
   ) =>
   Proxy v ->
-  HexString ->
+  HexStringInCBOR ->
   TestTree
 verKeyNotOnCurveParserTest _ rawVKey = testCase "Parsing should fail when trying to parse verification key not on the curve." $ do
   let (DeserialiseFailure _ actualError) = invalidVerKeyParserTest (Proxy @v) rawVKey
@@ -172,7 +190,7 @@ invalidVerKeyParserTest ::
   ( FromCBOR (VerKeyDSIGN v)
   ) =>
   Proxy v ->
-  HexString ->
+  HexStringInCBOR ->
   DeserialiseFailure
 invalidVerKeyParserTest _ rawVKey = do
   let result = fullVerKeyParser (Proxy @v) rawVKey
@@ -187,9 +205,9 @@ fullVerKeyParser ::
   ( FromCBOR (VerKeyDSIGN v)
   ) =>
   Proxy v ->
-  HexString ->
+  HexStringInCBOR ->
   Either DecoderError (VerKeyDSIGN v)
-fullVerKeyParser _ (HexString hs) = (decodeFull' . convertToBytes) hs
+fullVerKeyParser _ (HexCBOR hs) = decodeFull' hs
 
 -- Use mismatch messages and signature vectors to test how verification behaves on wrong message or wrong signature
 mismatchMessageSignatureTest ::
@@ -199,10 +217,9 @@ mismatchMessageSignatureTest ::
     Signable v a,
     ToSignable v a
   ) =>
-  Proxy v ->
   [(ByteString, VerKeyDSIGN v, SigDSIGN v)] ->
   TestTree
-mismatchMessageSignatureTest _ mismatchMessageSignatureVectors =
+mismatchMessageSignatureTest mismatchMessageSignatureVectors =
   testCase "Verification should not be successful when using mismatch message, signature and vice versa." $
     forM_
       mismatchMessageSignatureVectors
@@ -220,10 +237,9 @@ mismatchSignKeyVerKeyTest ::
     ToSignable v a,
     FromCBOR (SignKeyDSIGN v)
   ) =>
-  Proxy v ->
   VerKeyDSIGN v ->
   TestTree
-mismatchSignKeyVerKeyTest _ vKey = testCase "Verification should not be successful when using wrong verification key." $ do
+mismatchSignKeyVerKeyTest vKey = testCase "Verification should not be successful when using wrong verification key." $ do
   let result = signAndVerifyWithVkey (Proxy @v) defaultSKey vKey defaultMessage
   assertBool "Test failed. Verification should not be successful." $ isLeft result
 
@@ -242,10 +258,9 @@ verifyOnlyTest ::
     Signable v a,
     ToSignable v a
   ) =>
-  Proxy v ->
   (VerKeyDSIGN v, ByteString, SigDSIGN v) ->
   TestTree
-verifyOnlyTest _ (vKey, msg, sig) = testCase "Verification only should be successful." $ verifyOnly (Proxy @v) vKey msg sig
+verifyOnlyTest (vKey, msg, sig) = testCase "Verification only should be successful." $ verifyOnly (Proxy @v) vKey msg sig
 
 -- Sign using givne sKey and verify it
 signAndVerifyTest ::
@@ -313,7 +328,7 @@ verifyOnly ::
   IO ()
 verifyOnly _ vKey msg sig = do
   let result = verifyDSIGN () vKey (toSignable (Proxy @v) msg) sig
-  assertBool "Test failed. Sign and verification should be successful." $ isRight result
+  assertBool "Test failed. Verification only should be successful." $ isRight result
 
 -- Class for supplying required message format according to signature algorithm used
 class ToSignable v a | v -> a where
